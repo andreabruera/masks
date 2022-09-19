@@ -5,7 +5,7 @@ import os
 from matplotlib import pyplot
 from scipy import stats
 
-from utils_two import read_words_and_triggers
+from lab_utils import read_words_and_triggers
 
 numpy.seterr(all='raise')
 
@@ -19,10 +19,12 @@ _, questions = read_words_and_triggers(return_questions=True)
 
 ### Reading files
 
-bids_folder = os.path.join('unaware_semantics_bids', 'sourcedata')
+bids_folder = os.path.join('..', 'unaware_semantics_bids', 'sourcedata')
 assert os.path.exists(bids_folder)
 
 subjects = list(range(1, 46))
+bads = [8, 9, 10, 22, 25, 28, 37]
+#subjects = [s for s in subjects if s not in bads]
 res_dict = dict()
 
 for s in subjects:
@@ -35,7 +37,7 @@ for s in subjects:
             continue
         f_path = os.path.join(bids_folder, 'sub-{:02}'.format(s),
                 'sub-{:02}_task-namereadingimagery_run-{:02}_events.tsv'.format(s, r))
-        print(f_path)
+        #print(f_path)
         assert os.path.exists(f_path)
         with open(f_path) as i:
             lines = [l.strip().split('\t') for l in i.readlines()]
@@ -82,19 +84,22 @@ for s in subjects:
 all_correct = numpy.array(all_correct)
 all_wrong = numpy.array(all_wrong)
 
+# bar plot
+
 fig, ax = pyplot.subplots(figsize=(16, 9))
 
-ax.bar(subjects, all_correct, label='correct')
-ax.bar(subjects, all_wrong, bottom=all_correct, label='wrong')
+ax.bar(range(len(subjects)), all_correct, label='correct')
+ax.bar(range(len(subjects)), all_wrong, bottom=all_correct, label='wrong')
 
-ax.set_xticks(subjects)
+ax.set_xticks(range(len(subjects)))
+ax.set_xticklabels([str(v) for v in subjects])
 
 title = 'Overall performances for each subject'
 ax.set_title(title, pad=40.)
 ax.legend(loc=(0.25, 1.025), ncol=2)
 pyplot.tight_layout()
 #pyplot.show()
-file_path = os.path.join(plot_path, 'overall_performance.png')
+file_path = os.path.join(plot_path, 'overall_performance.jpg')
 pyplot.savefig(file_path)
 
 pyplot.clf()
@@ -124,17 +129,18 @@ all_high = numpy.array(all_high)
 
 fig, ax = pyplot.subplots(figsize=(16, 9))
 
-ax.bar(subjects, all_low, label='low')
-ax.bar(subjects, all_medium, bottom=all_low, label='medium')
-ax.bar(subjects, all_high, bottom=all_medium+all_low, label='high')
-ax.set_xticks(subjects)
+ax.bar(range(len(subjects)), all_low, label='low')
+ax.bar(range(len(subjects)), all_medium, bottom=all_low, label='medium')
+ax.bar(range(len(subjects)), all_high, bottom=all_medium+all_low, label='high')
+ax.set_xticks(range(len(subjects)))
+ax.set_xticklabels([str(v) for v in subjects])
 
 title = 'PAS scores for each subject'
 ax.set_title(title, pad=40.)
 ax.legend(loc=(0.25, 1.025), ncol=3)
 pyplot.tight_layout()
 #pyplot.show()
-file_path = os.path.join(plot_path, 'pas.png')
+file_path = os.path.join(plot_path, 'pas.jpg')
 pyplot.savefig(file_path)
 
 pyplot.clf()
@@ -148,47 +154,86 @@ all_high = list()
 pas = [1,2,3]
 acc = ['correct', 'wrong']
 
-results = {p : list() for p in pas}
+results = {mapper[p] : list() for p in pas}
 
 for s in subjects:
     s_data = [(int(w), res_dict['accuracy'][w_i]) for w_i, w in enumerate(res_dict['PAS_score']) if int(res_dict['subject'][w_i])==s]
     for p in pas:
         current_corr = len([1 for s_p, s_a in s_data if s_p==p and s_a=='correct'])
         current_wrong = len([1 for s_p, s_a in s_data if s_p==p and s_a=='wrong'])
-        if current_corr == 0 and current_wrong == 0:
-            s_r = numpy.nan
-        else:
+        try:
             s_r = current_corr/(current_corr+current_wrong)
-        results[p].append(s_r)
+            results[mapper[p]].append(s_r)
+        except ZeroDivisionError:
+            pass
+        '''
+        if current_corr == 0 and current_wrong == 0:
+            #s_r = numpy.nan
+            pass
+        else:
+        '''
+
+# Scatter plot
 
 fig, ax = pyplot.subplots(figsize=(16, 9))
 
 #ax.violinplot([p_r for k, p_r in results.items()])
 for k_p_r_i, k_p_r in enumerate(results.items()):
-    ax.scatter([i+1+k_p_r_i*0.1 for i in range(len(k_p_r[1]))], k_p_r[1], \
-                            label=mapper[k_p_r[0]])
+    ax.scatter([i+k_p_r_i*0.1 for i in range(len(k_p_r[1]))], k_p_r[1], \
+                            label=k_p_r[0])
+for x in range(len(subjects)):
+    ax.vlines(x=x, ymin=0., ymax=1., alpha=0.2, linestyle='dashdot')
 ax.legend()
-ax.hlines(y=0.5, xmin=0, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
-ax.hlines(y=1., xmin=0, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
-ax.set_xticks([s+0.1 for s in subjects])
-ax.set_xticklabels(subjects)
+ax.hlines(y=0.5, xmin=-.5, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
+ax.hlines(y=1., xmin=-.5, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
+#ax.set_xticks([s+0.1 for s in subjects])
+ax.set_xticks(range(len(subjects)))
+ax.set_xticklabels([str(v) for v in subjects])
 title = 'Accuracy scores across subjects'
 ax.set_title(title, pad=40.)
 ax.legend(loc=(0.25, 1.025), ncol=3)
 pyplot.tight_layout()
 
-file_path = os.path.join(plot_path, 'accuracies.png')
+file_path = os.path.join(plot_path, 'accuracies.jpg')
 pyplot.savefig(file_path)
 #pyplot.show()
 
 pyplot.clf()
+
+# Violin plot
+
+positions = list(range(3))
+xs = ['low\nawareness', 'medium\nawareness', 'high\nawareness']
+fig, ax = pyplot.subplots(figsize=(16, 9))
+for pos, k_v in enumerate(results.items()):
+    data = k_v[1]
+    parts = ax.violinplot(data,positions=[pos],showextrema=False)
+    for pc in parts['bodies']:
+        pc.set_edgecolor('black')
+        pc.set_alpha(.75)
+    ax.plot([pos, pos], [min(data), max(data)],
+             zorder=2, alpha=.65, color='black')
+    ax.scatter([pos], [numpy.nanmean(data)],
+               marker='H', color='white',s=300,
+               zorder=3)
+
+ax.set_xticks(range(len((results.keys()))))
+ax.set_xticklabels(results.keys())
+
+ax.hlines(y=0.5, xmin=-.5, xmax=2.5, alpha=0.7, color='darkgray', linestyles='dotted')
+ax.hlines(y=1., xmin=-.5, xmax=2.5, alpha=0.7, color='darkgray', linestyles='dotted')
+title = 'Accuracy scores across subjects'
+ax.set_title(title, pad=40.)
+
+file_path = os.path.join(plot_path, 'accuracies_violin.jpg')
+pyplot.savefig(file_path)
 
 ## D-prime
 
 pas = [1,2,3]
 acc = ['correct', 'wrong']
 
-results = {p : list() for p in pas}
+results = {mapper[p] : list() for p in pas}
 
 for s in subjects:
     s_data = [(int(w), res_dict['accuracy'][w_i], res_dict['required_answer'][w_i]) for w_i, w in enumerate(res_dict['PAS_score']) if int(res_dict['subject'][w_i])==s]
@@ -199,29 +244,67 @@ for s in subjects:
         z_fa = stats.norm.ppf(current_wrong)
         try:
             d_prime = z_hit - z_fa
+            if numpy.isinf(d_prime):
+                pass
+            else:
+                results[mapper[p]].append(d_prime)
         except FloatingPointError:
-            d_prime = numpy.nan
-        #print([p, d_prime])
-        results[p].append(d_prime)
+            #d_prime = numpy.nan
+            pass
 
 fig, ax = pyplot.subplots(figsize=(16, 9))
 
 #ax.violinplot([p_r for k, p_r in results.items()])
 for k_p_r_i, k_p_r in enumerate(results.items()):
-    ax.scatter([i+1+k_p_r_i*0.1 for i in range(len(k_p_r[1]))], k_p_r[1], \
-                            label=mapper[k_p_r[0]])
+    ax.scatter([i+k_p_r_i*0.1 for i in range(len(k_p_r[1]))], k_p_r[1], \
+                            label=k_p_r[0])
+for x in range(len(subjects)):
+    ax.vlines(x=x, ymin=-.3, ymax=1.5, alpha=0.2, linestyle='dashdot')
 ax.legend()
-ax.hlines(y=0.0, xmin=0, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
-ax.hlines(y=1.0, xmin=0, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
-ax.set_xticks([s+0.1 for s in subjects])
-ax.set_xticklabels(subjects)
+ax.hlines(y=0.0, xmin=-.5, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
+ax.hlines(y=1.0, xmin=-.5, xmax=len(subjects)+1, alpha=0.7, color='darkgray', linestyles='dotted')
+#ax.set_xticks([s+0.1 for s in subjects])
+ax.set_xticks(range(len(subjects)))
+ax.set_xticklabels([str(v) for v in subjects])
+
 title = 'D-prime scores across subjects'
 ax.set_title(title, pad=40.)
 ax.legend(loc=(0.25, 1.025), ncol=3)
 pyplot.tight_layout()
 
-file_path = os.path.join(plot_path, 'dprime.png')
+file_path = os.path.join(plot_path, 'dprime.jpg')
 pyplot.savefig(file_path)
 #pyplot.show()
 
 pyplot.clf()
+
+# Violin plot
+
+positions = list(range(3))
+xs = ['low\nawareness', 'medium\nawareness', 'high\nawareness']
+fig, ax = pyplot.subplots(figsize=(16, 9))
+for pos, k_v in enumerate(results.items()):
+    data = k_v[1]
+    parts = ax.violinplot(data,
+               positions=[pos],
+               showextrema=False,
+               )
+    for pc in parts['bodies']:
+        pc.set_edgecolor('black')
+        pc.set_alpha(.75)
+    ax.plot([pos, pos], [min(data), max(data)],
+             zorder=2, alpha=.65, color='black')
+    ax.scatter([pos], [numpy.nanmean(data)],
+               marker='H', color='white',s=300,
+               zorder=3)
+
+ax.set_xticks(range(len((results.keys()))))
+ax.set_xticklabels(results.keys())
+
+ax.hlines(y=0., xmin=-.5, xmax=2.5, alpha=0.7, color='darkgray', linestyles='dotted')
+ax.hlines(y=1., xmin=-.5, xmax=2.5, alpha=0.7, color='darkgray', linestyles='dotted')
+title = 'D-prime scores across subjects'
+ax.set_title(title, pad=40.)
+
+file_path = os.path.join(plot_path, 'dprime_violin.jpg')
+pyplot.savefig(file_path)
