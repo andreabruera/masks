@@ -298,7 +298,7 @@ excluded_channels = ['EXG3', 'EXG4', 'EXG5', 'EXG6', 'EXG7',
                      'Resp', 'Plet', 'Temp']
 
 montage = mne.channels.make_standard_montage(kind='biosemi128')
-subjects = [i for i in range(26, 46)]
+subjects = [i for i in range(1, 46)]
 
 if args.debugging:
     for s in subjects:
