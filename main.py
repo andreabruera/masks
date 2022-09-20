@@ -59,8 +59,8 @@ general_output_folder = os.path.join('results', args.analysis, args.data_split)
 #os.makedirs(general_output_folder, exist_ok=True)
 
 exp = ExperimentInfo(args)
-EEGData(exp, 17, args)
-import pdb; pdb.set_trace()
+for i in range(1, 46):
+    EEGData(exp, i, args)
 
 ### Behavioural analyses
 if args.analysis == 'behavioural':

@@ -14,7 +14,7 @@ class ExperimentInfo:
 
     def read_events_log(self, args):
 
-        for s in range(16, self.n_subjects):
+        for s in range(1, self.n_subjects+1):
             file_path = os.path.join(args.bids_folder,
                    'derivatives',
                    'sub-{:02}'.format(s),
@@ -24,14 +24,14 @@ class ExperimentInfo:
             with open(file_path) as i:
                 lines = [l.strip().split('\t') for l in i.readlines()]
             header = lines[0]
-            if s == 16:
+            if s == 1:
                 events_collector = {h : list() for h in header}
                 events_collector['subject'] = list()
             data = lines[1:]
             for d_line in data:
                 for h, d in zip(header, d_line):
                     events_collector[h].append(d)
-                    events_collector['subject'].append(s)
+                events_collector['subject'].append(s)
 
         ### Collecting triggers bottom-up
 
@@ -67,7 +67,7 @@ class EEGData:
         self.subject = n
         assert (n > 0 and n < 46)
         self.experiment_info = experiment_info
-        self.eeg_data, self.times, self.permutations = self.get_eeg_data(args)
+        self.data_dict, self.times = self.get_eeg_data(args)
 
     def get_eeg_data(self, args):
 
@@ -83,11 +83,10 @@ class EEGData:
 
         ### Reading subjects events
         sub_indices = [v_i for v_i, v in enumerate(self.experiment_info.events_log['subject']) if v==self.subject]
-        import pdb; pdb.set_trace()
         assert (len(sub_indices) > 100 and len(sub_indices) < 1000)
         current_events = {k : [v[idx] for idx in sub_indices] for k, v in self.experiment_info.events_log.items()}
         for ev_t, eeg_t in zip(current_events['value'], epochs.events[:, 2]):
-            assert ev_t == eeg_t
+            assert int(ev_t) == eeg_t
 
         ### Selecting the key for the label
         if args.data_split == 'objective_accuracy':
@@ -108,7 +107,7 @@ class EEGData:
                 data_dict[k][t] = numpy.average(vecs, axis=0)
                 assert data_dict[k][t].shape == epoch.shape
 
-        return final_dict, times
+        return data_dict, times
 
 class ComputationalModel:
 
