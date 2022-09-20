@@ -9,9 +9,9 @@ from tqdm import tqdm
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
 #from classification.time_resolved_classification import run_classification, run_searchlight_classification
 #from plot_scripts.plot_classification import plot_classification
-#from rsa.group_searchlight import run_group_searchlight
-#from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
-#from searchlight.searchlight_utils import SearchlightClusters
+from rsa.group_searchlight import run_group_searchlight
+from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
+from searchlight.searchlight_utils import SearchlightClusters
 
 ### Logging utility
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
@@ -58,13 +58,11 @@ args = parser.parse_args()
 general_output_folder = os.path.join('results', args.analysis, args.data_split)
 #os.makedirs(general_output_folder, exist_ok=True)
 
-exp = ExperimentInfo(args)
-for i in range(1, 46):
-    EEGData(exp, i, args)
+experiment = ExperimentInfo(args)
 
 ### Behavioural analyses
 if args.analysis == 'behavioural':
-    results = read_results(args, exp)
+    pass
 
 ### Time-resolved classification with all electrodes
 elif args.analysis == 'classification':
@@ -106,7 +104,7 @@ else:
 
     ### Group searchlight
     if 'group' in args.analysis:
-        run_group_searchlight(args, exp, searchlight_clusters, \
+        run_group_searchlight(args, experiment, searchlight_clusters, \
                                           general_output_folder)
 
     ### RSA searchlight preparation
@@ -114,14 +112,16 @@ else:
 
         general_output_folder = os.path.join(general_output_folder, args.computational_model)
         os.makedirs(general_output_folder, exist_ok=True)
-        comp_model = ComputationalModel(args)
+        comp_model = ComputationalModel(args, experiment)
 
     ### Within-subject multiprocessing loop
-    for n in tqdm(range(exp.n_subjects)):
+    for n in tqdm(range(1, experiment.n_subjects+1)):
 
-        eeg = SubjectData(exp, n, args)
+        eeg = EEGData(experiment, n, args)
 
-        data = eeg.eeg_data
+        data = eeg.data_dict
+        mapper = {'1' : 'low', '2' : 'medium', '3' : 'high'}
+        data = {mapper[k] : v for k, v in data.items()}
 
         ### Extracting actual clusters
         times = eeg.times
@@ -143,7 +143,7 @@ else:
                     for cluster in tqdm(clusters):
                         results.append(\
                                   run_searchlight_classification([\
-                                  exp, \
+                                  experiment, \
                                   n, args, data[awareness], \
                                   cluster,\
                                   eeg.permutations[awareness]]))
@@ -152,7 +152,7 @@ else:
 
                         results = p.map(\
                                   run_searchlight_classification, \
-                                  [[exp, n, args, \
+                                  [[experiment, n, args, \
                                     data[awareness], cluster, \
                                     eeg.permutations[awareness]] \
                                     for cluster in clusters])
@@ -162,7 +162,7 @@ else:
             ### Searchlight-based RSA
             elif args.analysis == 'rsa_searchlight':
 
-                words = list(vecs.keys())
+                words = [k for k in vecs.keys() if k<33]
                 ### Only employing conditions with at
                 ### least 5 words
                 #if len(words) >= 5:

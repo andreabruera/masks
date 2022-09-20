@@ -111,10 +111,11 @@ class EEGData:
 
 class ComputationalModel:
 
-    def __init__(self, args):
+    def __init__(self, args, experiment):
 
         self.model = args.computational_model
         self.word_sims = self.load_word_sims(args)
+        self.experiment = experiment
 
     def load_word_sims(self, args):
 
@@ -132,8 +133,10 @@ class ComputationalModel:
         ordered_words = sorted(words)
         combs = list(itertools.combinations(ordered_words, 2))
         pairwise_similarities = list()
-        for c in combs:
-            sim = self.word_sims[c]
+        for word_c in combs:
+            n_c = (self.experiment.trigger_to_info[word_c[0]][0],
+                   self.experiment.trigger_to_info[word_c[1]][0])
+            sim = self.word_sims[n_c]
             pairwise_similarities.append(sim)
 
         return ordered_words, combs, pairwise_similarities
