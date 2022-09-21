@@ -1,14 +1,16 @@
 import argparse
+import itertools
 import logging
 import multiprocessing
 import os
+import random
 import scipy
 
 from tqdm import tqdm
 
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
 from classification.time_resolved_classification import run_classification, run_searchlight_classification
-#from plot_scripts.plot_classification import plot_classification
+from plot_scripts.plot_classification import plot_classification
 from rsa.group_searchlight import run_group_searchlight
 from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
 from searchlight.searchlight_utils import SearchlightClusters
@@ -23,8 +25,8 @@ parser.add_argument('--analysis', required=True, \
                     choices=['classification', \
                              'classification_searchlight', \
                              'rsa_searchlight', \
-                             'group_rsa_searchlight', \
-                             'group_classification_searchlight'], \
+                             'rsa_searchlight', \
+                             'classification_searchlight'], \
                     help='Indicates which analysis to perform')
 
 parser.add_argument('--computational_model', required=False, \
@@ -103,90 +105,103 @@ else:
         raise RuntimeError('You need to specify a computational model!')
 
     ### Group searchlight
-    if 'group' in args.analysis:
+    if args.plot:
         run_group_searchlight(args, experiment, searchlight_clusters, \
                                           general_output_folder)
 
     ### RSA searchlight preparation
-    if args.analysis == 'rsa_searchlight':
+    else:
 
-        general_output_folder = os.path.join(general_output_folder, args.computational_model)
-        os.makedirs(general_output_folder, exist_ok=True)
-        comp_model = ComputationalModel(args, experiment)
 
-    ### Within-subject multiprocessing loop
-    for n in tqdm(range(1, experiment.n_subjects+1)):
+        ### Within-subject multiprocessing loop
+        for n in tqdm(range(1, experiment.n_subjects+1)):
 
-        eeg = EEGData(experiment, n, args)
+            eeg = EEGData(experiment, n, args)
 
-        data = eeg.data_dict
-        mapper = {'1' : 'low', '2' : 'medium', '3' : 'high'}
-        data = {mapper[k] : v for k, v in data.items()}
+            data = eeg.data_dict
+            mapper = {'1' : 'low', '2' : 'medium', '3' : 'high'}
+            data = {mapper[k] : v for k, v in data.items()}
 
-        ### Extracting actual clusters
-        times = eeg.times
-        relevant_times = [t_i for t_i, t in enumerate(times) if t_i+16<len(times)][::8]
-        explicit_times = [times[t] for t in relevant_times]
-        clusters = [(e_s, t_s) for e_s in electrode_indices for t_s in relevant_times]
+            ### Extracting actual clusters
+            times = eeg.times
+            relevant_times = [t_i for t_i, t in enumerate(times) if t_i+16<len(times)][::8]
+            explicit_times = [times[t] for t in relevant_times]
+            clusters = [(e_s, t_s) for e_s in electrode_indices for t_s in relevant_times]
 
-        ### Looping over the various awareness levels
-        for awareness, vecs in data.items():
+            ### Looping over the various awareness levels
+            for awareness, vecs in data.items():
 
-            results = list()
-            ### Searchlight-based classification
-            if args.analysis == 'classification_searchlight':
-                logging.info('Now running analysis on '
-                             'subject {}, awareness level {}'\
-                             .format(n+1, awareness))
+                ### Searchlight-based classification
+                if args.analysis == 'classification_searchlight':
+                    os.makedirs(general_output_folder, exist_ok=True)
 
-                if args.debugging:
-                    for cluster in tqdm(clusters):
-                        results.append(\
-                                  run_searchlight_classification([\
-                                  experiment, \
-                                  n, args, data[awareness], \
-                                  cluster,\
-                                  eeg.permutations[awareness]]))
-                else:
-                    with multiprocessing.Pool() as p:
+                    logging.info('Now running analysis on '
+                                 'subject {}, awareness level {}'\
+                                 .format(n, awareness))
 
-                        results = p.map(\
-                                  run_searchlight_classification, \
-                                  [[experiment, n, args, \
-                                    data[awareness], cluster, \
-                                    eeg.permutations[awareness]] \
-                                    for cluster in clusters])
-                        p.terminate()
-                        p.join()
+                    animals = [k for k in vecs.keys() if experiment.trigger_to_info[k][1]=='animal']
+                    objects = [k for k in vecs.keys() if experiment.trigger_to_info[k][1]=='object']
+                    min_len = min([len(animals), len(objects)])
+                    if min_len <= 7:
+                        print('not enough data for subject {}, {}'.format(n, awareness))
+                        continue
 
-            ### Searchlight-based RSA
-            elif args.analysis == 'rsa_searchlight':
+                    combs = list(itertools.product(animals, objects, repeat=1))
+                    combs = random.sample(combs, k=100)
 
-                words = [k for k in vecs.keys() if k<33]
-                ### Only employing conditions with at
-                ### least 5 words
-                #if len(words) >= 5:
-                ### Only employing conditions with
-                ### at least 16 words
-                if len(words) >= 16:
-                    ordered_words, combs, pairwise_similarities = comp_model.compute_pairwise(words)
 
-                    with multiprocessing.Pool() as p:
+                    if args.debugging:
+                        results = list()
+                        for cluster in tqdm(clusters):
+                            results.append(\
+                                      run_searchlight_classification([\
+                                      experiment, \
+                                      n, args, data[awareness], \
+                                      cluster,\
+                                      combs]))
+                    else:
+                        with multiprocessing.Pool() as p:
 
-                        results = p.map(run_searchlight, \
-                                    [[vecs, \
-                                    comp_model, \
-                                    cluster, \
-                                    combs, \
-                                    pairwise_similarities] \
-                                    for cluster in clusters])
-                        p.terminate()
-                        p.join()
+                            results = p.map(\
+                                      run_searchlight_classification, \
+                                      [[experiment, n, args, \
+                                        data[awareness], cluster, \
+                                        combs] \
+                                        for cluster in clusters])
+                            p.terminate()
+                            p.join()
 
-            if len(results) > 1:
-                finalize_rsa_searchlight(results, \
-                                     relevant_times, \
-                                     explicit_times, \
-                                     general_output_folder, \
-                                     awareness,
-                                     n)
+                ### Searchlight-based RSA
+                elif args.analysis == 'rsa_searchlight':
+
+                    general_output_folder = os.path.join(general_output_folder, args.computational_model)
+                    os.makedirs(general_output_folder, exist_ok=True)
+                    comp_model = ComputationalModel(args, experiment)
+                    words = [k for k in vecs.keys() if k<33]
+                    ### Only employing conditions with at
+                    ### least 5 words
+                    #if len(words) >= 5:
+                    ### Only employing conditions with
+                    ### at least 16 words
+                    if len(words) >= 16:
+                        ordered_words, combs, pairwise_similarities = comp_model.compute_pairwise(words)
+
+                        with multiprocessing.Pool() as p:
+
+                            results = p.map(run_searchlight, \
+                                        [[vecs, \
+                                        comp_model, \
+                                        cluster, \
+                                        combs, \
+                                        pairwise_similarities] \
+                                        for cluster in clusters])
+                            p.terminate()
+                            p.join()
+
+                if len(results) > 1:
+                    finalize_rsa_searchlight(results, \
+                                         relevant_times, \
+                                         explicit_times, \
+                                         general_output_folder, \
+                                         awareness,
+                                         n)

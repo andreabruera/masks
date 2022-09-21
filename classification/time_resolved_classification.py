@@ -77,10 +77,37 @@ def run_searchlight_classification(all_args):
 
     eeg_scores = list()
 
-    ### Reducing eeg to the relevant cluster
-    eeg = {k : [vec[places, start_time:start_time+16].flatten() for vec in v] for k, v in eeg.items()}
+    animals = [k for k in eeg.keys() if exp.trigger_to_info[k][1]=='animal']
+    objects = [k for k in eeg.keys() if exp.trigger_to_info[k][1]=='object']
+    min_len = min([len(animals), len(objects)])
 
-    accuracy_score = classify(eeg, test_splits)
+    ### Reducing eeg to the relevant cluster
+    import pdb; pdb.set_trace()
+    eeg = {k : [vec[places, start_time:start_time+16].flatten() for vec in v] for k, v in eeg.items()}
+    results_list = list()
+    for c in test_splits:
+        ### Train
+        train_animals = [k for k in animals if k not in c]
+        train_objects = [k for k in objects if k not in c]
+        train_animals = random.sample(train_animals, k=min_len-1)
+        train_objects = random.sample(train_objects, k=min_len-1)
+        train_idxs = random.sample(train_animals+train_objects, k=(min_len-1)*2)
+        train_input = [vecs[k][:, time_i] for k in train_idxs]
+        for t in train_input:
+            assert t.shape[0] == 128
+        train_target = [exp.trigger_to_info[k][1] for k in train_idxs]
+
+        ### Test
+        test_input = [vecs[k][:, time_i] for k in c]
+        for t in test_input:
+            assert t.shape[0] == 128
+        test_target = [exp.trigger_to_info[k][1] for k in c]
+
+        ridge_model = sklearn.linear_model.RidgeClassifier()
+        ridge_model.fit(train_input, train_target)
+        accuracy = ridge_model.score(test_input, test_target)
+        results_list.append(accuracy)
+    accuracy_score = numpy.average(results_list)
 
     return [(places[0], start_time), accuracy_score]
 
@@ -99,7 +126,8 @@ def run_classification(all_args):
 
     for awareness, vecs in data.items():    
 
-        awareness = mapper[awareness]
+        if args.data_split == 'perceptual_awareness':
+            awareness = mapper[awareness]
 
         animals = [k for k in vecs.keys() if exp.trigger_to_info[k][1]=='animal']
         objects = [k for k in vecs.keys() if exp.trigger_to_info[k][1]=='object']
