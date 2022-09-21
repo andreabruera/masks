@@ -14,7 +14,7 @@ from tqdm import tqdm
 from matplotlib import pyplot
 from scipy import stats
 from tqdm import tqdm
-from io_utils import ExperimentInfo, EEGData
+from io_utils import ExperimentInfo, EEGData, ComputationalModel
 
 def classify(data, test_splits):
 
@@ -82,7 +82,6 @@ def run_searchlight_classification(all_args):
     min_len = min([len(animals), len(objects)])
 
     ### Reducing eeg to the relevant cluster
-    import pdb; pdb.set_trace()
     eeg = {k : [vec[places, start_time:start_time+16].flatten() for vec in v] for k, v in eeg.items()}
     results_list = list()
     for c in test_splits:
@@ -173,6 +172,57 @@ def run_classification(all_args):
             results_list = numpy.average(results_list)
             scores_times.append(results_list)
         print(numpy.average(scores_times))
+
+        ### Writing to file
+        with open(os.path.join(general_output_folder, \
+                     'sub_{:02}_{}_scores.txt'.\
+                     format(n+1, awareness)), 'w') as o:
+            for t in times:
+                o.write('{}\t'.format(t))
+            o.write('\n')
+            for d in scores_times:
+                o.write('{}\t'.format(d))
+
+def run_time_resolved_rsa(all_args):
+
+    exp = all_args[0]
+    n = all_args[1]
+    args = all_args[2]
+    general_output_folder = all_args[3]
+    
+    eeg = EEGData(exp, n, args)
+    data = eeg.data_dict
+    times = list(eeg.times)
+
+    mapper = {'1' : 'low', '2': 'medium', '3' : 'high'}
+
+    comp_model = ComputationalModel(args, exp)
+
+    for awareness, vecs in data.items():    
+        if args.data_split == 'perceptual_awareness':
+            awareness = mapper[awareness]
+
+        words = [k for k in vecs.keys() if k<33]
+        if len(words) <= 14:
+            print('not enough data for subject {}, {}'.format(n, awareness))
+            continue
+        ordered_words, combs, pairwise_similarities = comp_model.compute_pairwise(words)
+
+        ### Time-resolved RSA
+
+        ### RSA-ing each time point
+        scores_times = list()
+        for time_i, time in tqdm(enumerate(times)):
+            eeg_similarities = list()
+            for word_one, word_two in combs:
+
+                eeg_one = vecs[word_one][:, time_i].flatten()
+                eeg_two = vecs[word_two][:, time_i].flatten()
+
+                eeg_score = stats.pearsonr(eeg_one, eeg_two)[0]
+                eeg_similarities.append(eeg_score)
+            rho_score = stats.pearsonr(eeg_similarities, pairwise_similarities)[0]
+            scores_times.append(rho_score)
 
         ### Writing to file
         with open(os.path.join(general_output_folder, \

@@ -9,7 +9,7 @@ import scipy
 from tqdm import tqdm
 
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
-from classification.time_resolved_classification import run_classification, run_searchlight_classification
+from classification.time_resolved_classification import run_classification, run_searchlight_classification, run_time_resolved_rsa
 from plot_scripts.plot_classification import plot_classification
 from rsa.group_searchlight import run_group_searchlight
 from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
@@ -26,7 +26,9 @@ parser.add_argument('--analysis', required=True, \
                              'classification_searchlight', \
                              'rsa_searchlight', \
                              'rsa_searchlight', \
-                             'classification_searchlight'], \
+                             'classification_searchlight',
+                             'time_resolved_rsa',
+                             ], \
                     help='Indicates which analysis to perform')
 
 parser.add_argument('--computational_model', required=False, \
@@ -38,6 +40,7 @@ parser.add_argument('--computational_model', required=False, \
 parser.add_argument('--data_split', required=True, \
                     choices=['objective_accuracy', \
                              'perceptual_awareness', \
+                             'best_case',
                              ], \
                     help='Indicates which pairwise similarities \
                           to compare, whether by considering \
@@ -65,6 +68,26 @@ experiment = ExperimentInfo(args)
 ### Behavioural analyses
 if args.analysis == 'behavioural':
     pass
+
+if args.analysis == 'time_resolved_rsa':
+    general_output_folder = os.path.join(general_output_folder, args.computational_model)
+    os.makedirs(general_output_folder, exist_ok=True)
+    ### Just plotting
+    if args.plot:
+        plot_classification(args)
+    ### Computing the classification scores
+    else:
+        accuracies = list()
+        ### One subject at a time
+        if args.debugging:
+            for n in tqdm(range(1, experiment.n_subjects+1)):
+                accuracies.append(run_time_resolved_rsa([experiment, n, args, general_output_folder]))
+        ### All subjects together
+        else:
+            with multiprocessing.Pool() as p:
+                accuracies = p.map(run_time_resolved_rsa, [[experiment, n, args, general_output_folder] for n in range(1, experiment.n_subjects+1)])
+            p.terminate()
+            p.join()
 
 ### Time-resolved classification with all electrodes
 elif args.analysis == 'classification':

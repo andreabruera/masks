@@ -47,7 +47,7 @@ def run_searchlight(all_args):
         eeg_one = eeg[word_one][places, start_time:start_time+16].flatten()
         eeg_two = eeg[word_two][places, start_time:start_time+16].flatten()
 
-        word_comb_score = stats.spearmanr(eeg_one, eeg_two)[0]
+        word_comb_score = stats.pearsonr(eeg_one, eeg_two)[0]
         eeg_similarities.append(word_comb_score)
 
     #rho_score = stats.spearmanr(eeg_similarities, pairwise_similarities)[0]

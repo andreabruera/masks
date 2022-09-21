@@ -16,6 +16,8 @@ from matplotlib import pyplot
 from tqdm import tqdm
 
 def run_group_searchlight(args, exp, clusters, input_folder):
+    bads = [8, 9, 10, 22, 25, 28, 37]
+    subjects = [s for s in range(1, 46) if s not in bads]
 
     pyplot.rcParams['figure.constrained_layout.use'] = True
     if args.analysis == 'group_classification_searchlight':
@@ -49,7 +51,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
 
         all_subjects = list()
 
-        for n in range(1, exp.n_subjects+1):
+        for n in subjects:
 
             file_path = os.path.join(input_folder, '{}_sub-{:02}.rsa'.format(awareness, n))
 
@@ -66,6 +68,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
                     missing_per_condition[awareness].append(n)
 
         all_subjects = numpy.array(all_subjects)
+        print(all_subjects.shape)
         present_per_condition[awareness] = all_subjects.shape[0]
 
         t_stats, _, \
@@ -94,8 +97,8 @@ def run_group_searchlight(args, exp, clusters, input_folder):
         ### Plotting the results
 
         log_p = -numpy.log(p_values)
-        log_p[log_p<=-numpy.log(0.05)] = 0.0
-        #log_p[log_p<=-numpy.log(0.005)] = 0.0
+        #log_p[log_p<=-numpy.log(0.05)] = 0.0
+        log_p[log_p<=-numpy.log(0.005)] = 0.0
 
         log_p = log_p.reshape(original_shape).T
 
@@ -121,14 +124,16 @@ def run_group_searchlight(args, exp, clusters, input_folder):
             evoked.plot_topomap(ch_type='eeg', \
                                 time_unit='s', \
                                 times=significant_times, \
-                                units='-log(p)\nif\np<=.05', \
+                                units='-log(p)\nif\np<=.005', \
                                 ncols=7, nrows='auto', \
                                 vmin=0., \
                                 scalings={'eeg':1.}, \
                                 cmap=cmap, title=title)
 
-            pyplot.savefig(os.path.join(plot_path, \
-                            '{}_{}_significant_points.png'.\
+            sig_plot_path = os.path.join(plot_path, 'significant_points_005')
+            os.makedirs(sig_plot_path, exist_ok=True)
+            pyplot.savefig(os.path.join(sig_plot_path, \
+                            '{}_{}_significant_points.jpg'.\
                             format(awareness, \
                             marker)), dpi=600)
             pyplot.clf()
@@ -153,11 +158,14 @@ def run_group_searchlight(args, exp, clusters, input_folder):
                             scalings={'eeg':1.}, \
                             cmap= '{}_r'.format(cmap), \
                             title=title)
+        all_plot_path = os.path.join(plot_path, 'all_time_points')
+        os.makedirs(all_plot_path, exist_ok=True)
         pyplot.savefig(os.path.join(plot_path, \
-                        '{}_{}_all_points.png'.format(\
+                        '{}_{}_all_time_points.jpg'.format(\
                           awareness, marker)), dpi=600)
         pyplot.clf()
 
+    print('Missing: {}'.format(missing_per_condition))
     with open(os.path.join(plot_path, 'missing_present_subjects_log.txt'), 'w') as o:
         for k, v in missing_per_condition.items():
             o.write('Condition\t{}\tmissing subjects\t'.format(k))

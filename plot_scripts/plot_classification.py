@@ -2,6 +2,7 @@ import matplotlib
 import mne
 import numpy
 import os
+import scipy
 
 from matplotlib import pyplot
 from scipy import stats
@@ -11,32 +12,64 @@ def check_statistical_significance(args, setup_data):
     if not type(setup_data) == numpy.array:
         setup_data = numpy.array(setup_data)
     ### Checking for statistical significance
-    random_baseline = .5
+    if args.analysis == 'time_resolved_rsa':
+        random_baseline = 0.
+    else:
+        random_baseline = .5
     ### T-test
     '''
     original_p_values = stats.ttest_1samp(setup_data, \
                          popmean=random_baseline, \
                          alternative='greater').pvalue
     '''
+    significance_data = setup_data - random_baseline
     ### Wilcoxon
-    significance_data = setup_data.T - random_baseline
+    '''
     original_p_values = list()
-    for t in significance_data:
+    for t in significance_data.T:
         p = stats.wilcoxon(t, alternative='greater')[1]
         original_p_values.append(p)
-
+    '''
+    adj = numpy.zeros((setup_data.shape[-1], setup_data.shape[-1]))
+    for i in range(setup_data.shape[-1]):
+        #if args.subsample == 'subsample_2' or args.data_kind != 'erp':
+        #if args.subsample == 'subsample_2':
+        #    win = range(1, 2)
+        #else:
+        win = range(1, 4)
+        for window in win:
+            adj[i, max(0, i-window)] = 1
+            adj[i, min(setup_data.shape[-1]-1, i+window)] = 1
+    adj = scipy.sparse.coo_matrix(adj)
+    t_stats, _, \
+    original_p_values, _ = mne.stats.spatio_temporal_cluster_1samp_test(\
+                                                       significance_data, \
+                                                       tail=1, \
+                                                       adjacency=adj, \
+                                                       threshold=dict(start=0, step=0.2), \
+                                                       n_jobs=os.cpu_count()-1, \
+                                                       #n_permutations=4096, \
+                                                       #n_permutations='all', \
+                                                       )
     assert len(original_p_values) == setup_data.shape[-1]
 
     ### FDR correction
-    corrected_p_values = mne.stats.fdr_correction(original_p_values)[1]
-    significant_indices = [i for i, v in enumerate(corrected_p_values) if v<=0.05]
+    corrected_p_values = original_p_values.copy()
+    #corrected_p_values = mne.stats.fdr_correction(original_p_values)[1]
+    print(min(corrected_p_values))
+    significance = 0.05
+    significant_indices = [i for i, v in enumerate(corrected_p_values) if v<=significance]
 
     return significant_indices
 
 def possibilities(args):
 
-    categories = ['low', 'medium', 'high'] if args.data_split == \
-                  'perceptual_awareness' else ['correct', 'wrong']
+    if args.data_split == 'perceptual_awareness':
+        categories = ['low', 'medium', 'high'] 
+    elif args.data_split == 'best_case':
+        categories = ['best_case']
+    else:
+        categories = ['correct', 'wrong']
     
     ### ERP
     if args.data_kind == 'erp':
@@ -53,7 +86,9 @@ def possibilities(args):
 
 def read_files(args):
 
-    subjects = [s for s in range(1, 46) if s not in []]
+    subjects = list(range(1, 46))
+    bads = [8, 22, 25, 28, 37]
+    subjects = [s for s in subjects if s not in bads]
 
     data_dict = possibilities(args)
 
@@ -62,7 +97,10 @@ def read_files(args):
         for cat, values in v.items():
             path = os.path.join('results', 
                                 args.analysis, \
-                                args.data_split)
+                                args.data_split,
+                                )
+            if args.analysis == 'time_resolved_rsa':
+                path = os.path.join(path, args.computational_model)
             assert os.path.exists(path)
 
             file_lambda = lambda arg_list : os.path.join(arg_list[0], \
@@ -89,7 +127,9 @@ def plot_classification(args):
 
     data_dict, times = read_files(args)
 
-    data_dict = {k : {k_two : [vec for vec in v_two if len(vec)==282] for k_two, v_two in v.items()} for k, v in data_dict.items()}
+    times = times[25:180]
+
+    data_dict = {k : {k_two : [vec[25:180] for vec in v_two if len(vec)==282] for k_two, v_two in v.items()} for k, v in data_dict.items()}
 
     plot_path = os.path.join('plots', args.analysis, \
                              args.data_split)
@@ -110,7 +150,10 @@ def plot_classification(args):
         title = title.replace('_', ' ')
         ax[0].set_title(title)
 
-        random_baseline = .5
+        if args.analysis == 'time_resolved_rsa':
+            random_baseline = 0.
+        else:
+            random_baseline = .5
         ax[0].hlines(y=random_baseline, xmin=times[0], \
                      xmax=times[-1], color='darkgrey', \
                      linestyle='dashed')
@@ -182,9 +225,11 @@ def plot_classification(args):
             ax[1].text(x_text+.05, y_text, label)
 
 
-        pyplot.savefig(os.path.join(plot_path,\
+        out_file = os.path.join(plot_path,
                        'classification_{}_{}_{}.jpg'.format(args.analysis, \
-                        args.data_split, hz)),\
-                       dpi=600)
+                        args.data_split, hz))
+        if args.analysis == 'time_resolved_rsa':
+            out_file = out_file.replace('.jpg', '{}.jpg'.format(args.computational_model))
+        pyplot.savefig(out_file)
         pyplot.clf()
         pyplot.close(fig)

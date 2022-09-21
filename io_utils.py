@@ -89,20 +89,32 @@ class EEGData:
         current_events = {k : [v[idx] for idx in sub_indices] for k, v in self.experiment_info.events_log.items()}
         for ev_t, eeg_t in zip(current_events['value'], epochs.events[:, 2]):
             assert int(ev_t) == eeg_t
-
-        ### Selecting the key for the label
-        if args.data_split == 'objective_accuracy':
-            relevant_key = 'accuracy'
-        elif args.data_split == 'perceptual_awareness':
-            relevant_key = 'PAS_score'
-
         data_dict = dict()
-        for epoch, label, trigger in zip(epochs.get_data(), current_events[relevant_key], epochs.events[:, 2]):
-            if label not in data_dict.keys():
-                data_dict[label] = dict()
-            if trigger not in data_dict[label].keys():
-                data_dict[label][trigger] = list()
-            data_dict[label][trigger].append(epoch)
+
+        ## Considering only the correct cases among the aware cases
+        if args.data_split == 'best_case':
+            label = 'best_case'
+            for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+                if pas == '3' and acc == 'correct':
+                    if label not in data_dict.keys():
+                        data_dict[label] = dict()
+                    if trigger not in data_dict[label].keys():
+                        data_dict[label][trigger] = list()
+                    data_dict[label][trigger].append(epoch)
+
+        else:
+            ### Selecting the key for the label
+            if args.data_split == 'objective_accuracy':
+                relevant_key = 'accuracy'
+            elif args.data_split == 'perceptual_awareness':
+                relevant_key = 'PAS_score'
+
+            for epoch, label, trigger in zip(epochs.get_data(), current_events[relevant_key], epochs.events[:, 2]):
+                if label not in data_dict.keys():
+                    data_dict[label] = dict()
+                if trigger not in data_dict[label].keys():
+                    data_dict[label][trigger] = list()
+                data_dict[label][trigger].append(epoch)
 
         for k, v in data_dict.items():
             for t, vecs in v.items():
@@ -126,7 +138,13 @@ class ComputationalModel:
         assert os.path.exists(path)
         with open(path, encoding='utf-8') as i:
             lines = [l.strip().split('\t') for l in i.readlines()]
-        word_sims = {(sim[0], sim[1]) : float(sim[2]) for sim in lines}
+        if args.computational_model in ['w2v']:
+            idx = 3
+        else:
+            idx = 2
+        word_sims = {(sim[0], sim[1]) : float(sim[idx]) for sim in lines}
+        if args.computational_model in ['orthography', 'pixelwise', 'CORnet_V1']:
+            word_sims = {k : -v for k, v in word_sims.items()}
 
         return word_sims
 
