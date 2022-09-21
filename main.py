@@ -7,7 +7,7 @@ import scipy
 from tqdm import tqdm
 
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
-#from classification.time_resolved_classification import run_classification, run_searchlight_classification
+from classification.time_resolved_classification import run_classification, run_searchlight_classification
 #from plot_scripts.plot_classification import plot_classification
 from rsa.group_searchlight import run_group_searchlight
 from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
@@ -56,7 +56,7 @@ parser.add_argument('--data_kind', choices=['erp'], \
 args = parser.parse_args()
 
 general_output_folder = os.path.join('results', args.analysis, args.data_split)
-#os.makedirs(general_output_folder, exist_ok=True)
+os.makedirs(general_output_folder, exist_ok=True)
 
 experiment = ExperimentInfo(args)
 
@@ -76,12 +76,12 @@ elif args.analysis == 'classification':
         accuracies = list()
         ### One subject at a time
         if args.debugging:
-            for n in tqdm(range(exp.n_subjects)):
-                accuracies.append(run_classification([exp, n, args, general_output_folder]))
+            for n in tqdm(range(1, experiment.n_subjects+1)):
+                accuracies.append(run_classification([experiment, n, args, general_output_folder]))
         ### All subjects together
         else:
             with multiprocessing.Pool() as p:
-                accuracies = p.map(run_classification, [[exp, n, args, general_output_folder] for n in range(exp.n_subjects)])
+                accuracies = p.map(run_classification, [[experiment, n, args, general_output_folder] for n in range(1, experiment.n_subjects+1)])
             p.terminate()
             p.join()
 

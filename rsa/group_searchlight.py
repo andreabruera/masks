@@ -35,10 +35,10 @@ def run_group_searchlight(args, exp, clusters, input_folder):
     mne_adj_matrix = clusters.mne_adjacency_matrix
 
     plot_path = os.path.join('plots', args.analysis, \
-                             args.experiment_id, args.data_split)
+                             args.data_split)
     os.makedirs(plot_path, exist_ok=True)
 
-    if args.data_split == 'subjective_judgments':
+    if args.data_split == 'perceptual_awareness':
         awareness_levels = ['low', 'medium', 'high']
         cmap = 'PuBu'
     elif args.data_split == 'objective_accuracy':
@@ -75,7 +75,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
                                                            threshold=dict(start=0, step=0.2), \
                                                            n_jobs=os.cpu_count()-1, \
                                                            #n_permutations=4096, \
-                                                           n_permutations='all', \
+                                                           #n_permutations='all', \
                                                            )
 
         original_shape = t_stats.shape

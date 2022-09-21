@@ -20,6 +20,7 @@ class ExperimentInfo:
                    'sub-{:02}'.format(s),
                    'sub-{:02}_task-namereadingimagery_events.tsv'.format(s)
                    )
+            #print(file_path)
             assert os.path.exists(file_path)
             with open(file_path) as i:
                 lines = [l.strip().split('\t') for l in i.readlines()]
@@ -79,6 +80,7 @@ class EEGData:
         assert os.path.exists(eeg_path)
 
         epochs = mne.read_epochs(eeg_path, verbose=False)
+        epochs.pick_types(eeg=True)
         times = epochs.times
 
         ### Reading subjects events
