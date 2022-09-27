@@ -81,7 +81,11 @@ class EEGData:
 
         epochs = mne.read_epochs(eeg_path, verbose=False)
         epochs.pick_types(eeg=True)
+
         times = epochs.times
+
+        ### Extracting the covariance matrix
+        #covariance_matrix = mne.compute_covariance(epochs)
 
         ### Reading subjects events
         sub_indices = [v_i for v_i, v in enumerate(self.experiment_info.events_log['subject']) if v==self.subject]
@@ -92,10 +96,39 @@ class EEGData:
         data_dict = dict()
 
         ## Considering only the correct cases among the aware cases
-        if args.data_split == 'best_case':
+        if args.data_split == 'all_cases':
+            for pas_label in ['1', '2', '3']:
+                for acc_label in ['correct', 'wrong']:
+                    label = '{}_{}'.format(pas_label, acc_label)
+                    for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+                        if pas_label == pas and acc_label == acc:
+                            if label not in data_dict.keys():
+                                data_dict[label] = dict()
+                            if trigger not in data_dict[label].keys():
+                                data_dict[label][trigger] = list()
+                            data_dict[label][trigger].append(epoch)
+        elif args.data_split == 'grand_average':
+            label = 'grand_average'
+            for epoch, trigger in zip(epochs.get_data(), epochs.events[:, 2]):
+                if label not in data_dict.keys():
+                    data_dict[label] = dict()
+                if trigger not in data_dict[label].keys():
+                    data_dict[label][trigger] = list()
+                data_dict[label][trigger].append(epoch)
+            
+        elif args.data_split == 'best_case':
             label = 'best_case'
             for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
                 if pas == '3' and acc == 'correct':
+                    if label not in data_dict.keys():
+                        data_dict[label] = dict()
+                    if trigger not in data_dict[label].keys():
+                        data_dict[label][trigger] = list()
+                    data_dict[label][trigger].append(epoch)
+        elif args.data_split == 'worst_case':
+            label = 'worst_case'
+            for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+                if pas == '1' and acc == 'wrong':
                     if label not in data_dict.keys():
                         data_dict[label] = dict()
                     if trigger not in data_dict[label].keys():
@@ -116,12 +149,23 @@ class EEGData:
                     data_dict[label][trigger] = list()
                 data_dict[label][trigger].append(epoch)
 
+        final_data_dict = {k : dict() for k in data_dict.keys()}
+
         for k, v in data_dict.items():
             for t, vecs in v.items():
-                data_dict[k][t] = numpy.average(vecs, axis=0)
-                assert data_dict[k][t].shape == epoch.shape
+                ### Keeping only items with at least n repetitions
+                n_items = 8
 
-        return data_dict, times
+                if len(vecs) >= n_items:
+                    ### Randomizing the actual vectors used
+                    #vecs = random.sample(vecs, k=n_items)
+                    ### Taking the last n
+                    #vecs = vecs[-n_items:]
+                    #assert len(vecs) == n_items
+                    final_data_dict[k][t] = numpy.average(vecs, axis=0)
+                    assert final_data_dict[k][t].shape == epoch.shape
+
+        return final_data_dict, times
 
 class ComputationalModel:
 
@@ -138,13 +182,13 @@ class ComputationalModel:
         assert os.path.exists(path)
         with open(path, encoding='utf-8') as i:
             lines = [l.strip().split('\t') for l in i.readlines()]
-        if args.computational_model in ['w2v']:
+        if args.computational_model in ['w2v', 'fasttext', 'gpt2']:
             idx = 3
         else:
             idx = 2
         word_sims = {(sim[0], sim[1]) : float(sim[idx]) for sim in lines}
-        if args.computational_model in ['orthography', 'pixelwise', 'CORnet_V1']:
-            word_sims = {k : -v for k, v in word_sims.items()}
+        if args.computational_model not in ['length', 'orthography', 'pixelwise', 'CORnet_V1']:
+            word_sims = {k : 1. - v for k, v in word_sims.items()}
 
         return word_sims
 

@@ -9,8 +9,9 @@ import scipy
 from tqdm import tqdm
 
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
-from classification.time_resolved_classification import run_classification, run_searchlight_classification, run_time_resolved_rsa
-from plot_scripts.plot_classification import plot_classification
+from classification.time_resolved_classification import run_classification, run_searchlight_classification, run_time_resolved_rsa, run_grand_average
+from plot_scripts.plot_classification import plot_classification, plot_classification_subject_per_subject
+from plot_scripts.plot_grand_average import plot_grand_average
 from rsa.group_searchlight import run_group_searchlight
 from rsa.rsa_searchlight import finalize_rsa_searchlight, run_searchlight
 from searchlight.searchlight_utils import SearchlightClusters
@@ -28,12 +29,13 @@ parser.add_argument('--analysis', required=True, \
                              'rsa_searchlight', \
                              'classification_searchlight',
                              'time_resolved_rsa',
+                             'grand_average',
                              ], \
                     help='Indicates which analysis to perform')
 
 parser.add_argument('--computational_model', required=False, \
-                    choices=['cooc', 'log_cooc', 'ppmi', \
-                             'w2v', 'bert', 'wordnet', \
+                    choices=['cooc', 'log_cooc', 'ppmi', 'gpt2', 'length',
+                             'w2v', 'bert', 'wordnet', 'fasttext',
                              'orthography', 'pixelwise', 'CORnet_V1'], \
                     help='Which model?')
 
@@ -41,6 +43,9 @@ parser.add_argument('--data_split', required=True, \
                     choices=['objective_accuracy', \
                              'perceptual_awareness', \
                              'best_case',
+                             'worst_case',
+                             'all_cases',
+                             'grand_average',
                              ], \
                     help='Indicates which pairwise similarities \
                           to compare, whether by considering \
@@ -54,13 +59,20 @@ parser.add_argument('--plot', action='store_true', required=False, \
 parser.add_argument('--debugging', action='store_true', \
                     required=False, \
                     help='Debugging time?')
-
+parser.add_argument('--subject_per_subject', action='store_true', \
+                    required=False, \
+                    help='Subject per subject?')
 parser.add_argument('--data_kind', choices=['erp'], \
                     default='erp', help='ERP analyses?')
 
 args = parser.parse_args()
 
 general_output_folder = os.path.join('results', args.analysis, args.data_split)
+if 'rsa' in args.analysis:
+    general_output_folder = os.path.join(general_output_folder, args.computational_model)
+if not args.plot:
+    if os.path.exists(general_output_folder):
+        os.system('rm -r {}'.format(general_output_folder))
 os.makedirs(general_output_folder, exist_ok=True)
 
 experiment = ExperimentInfo(args)
@@ -69,12 +81,20 @@ experiment = ExperimentInfo(args)
 if args.analysis == 'behavioural':
     pass
 
-if args.analysis == 'time_resolved_rsa':
-    general_output_folder = os.path.join(general_output_folder, args.computational_model)
-    os.makedirs(general_output_folder, exist_ok=True)
+if args.analysis == 'grand_average':
+    if args.plot:
+        plot_grand_average(args)
+    else:
+        for n in tqdm(range(1, experiment.n_subjects+1)):
+            run_grand_average([experiment, n, args, general_output_folder])
+
+elif args.analysis == 'time_resolved_rsa':
     ### Just plotting
     if args.plot:
-        plot_classification(args)
+        if args.subject_per_subject:
+            plot_classification_subject_per_subject(args)
+        else:
+            plot_classification(args)
     ### Computing the classification scores
     else:
         accuracies = list()
@@ -94,7 +114,10 @@ elif args.analysis == 'classification':
 
     ### Just plotting
     if args.plot:
-        plot_classification(args)
+        if args.subject_per_subject:
+            plot_classification_subject_per_subject(args)
+        else:
+            plot_classification(args)
 
     ### Computing the classification scores
     else:
@@ -121,10 +144,7 @@ else:
 
 
     ### RSA check
-    if args.analysis in [\
-                         'group_rsa_searchlight', \
-                         'rsa_searchlight'] \
-                                       and not args.computational_model:
+    if args.analysis == 'rsa_searchlight' and not args.computational_model:
         raise RuntimeError('You need to specify a computational model!')
 
     ### Group searchlight
@@ -142,7 +162,10 @@ else:
             eeg = EEGData(experiment, n, args)
 
             data = eeg.data_dict
-            mapper = {'1' : 'low', '2' : 'medium', '3' : 'high'}
+            mapper = {'1' : 'low', '2' : 'medium', '3' : 'high',
+                      'correct' : 'correct', 'wrong' : 'wrong',
+                      'best_case' : 'best_case', 
+                      'worst_case' : 'worst_case'}
             data = {mapper[k] : v for k, v in data.items()}
 
             ### Extracting actual clusters
@@ -197,8 +220,8 @@ else:
                 ### Searchlight-based RSA
                 elif args.analysis == 'rsa_searchlight':
 
-                    general_output_folder = os.path.join(general_output_folder, args.computational_model)
-                    os.makedirs(general_output_folder, exist_ok=True)
+                    #general_output_folder = os.path.join(general_output_folder, args.computational_model)
+                    #os.makedirs(general_output_folder, exist_ok=True)
                     comp_model = ComputationalModel(args, experiment)
                     words = [k for k in vecs.keys() if k<33]
                     ### Only employing conditions with at

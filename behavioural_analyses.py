@@ -19,7 +19,7 @@ _, questions = read_words_and_triggers(return_questions=True)
 
 ### Reading files
 
-bids_folder = os.path.join('..', 'unaware_semantics_bids', 'sourcedata')
+bids_folder = os.path.join('..', '..', 'dataset', 'neuroscience', 'unaware_semantics_bids', 'derivatives')
 assert os.path.exists(bids_folder)
 
 subjects = list(range(1, 46))
@@ -28,6 +28,7 @@ bads = [8, 9, 10, 22, 25, 28, 37]
 res_dict = dict()
 
 for s in subjects:
+    '''
     for r in range(1, 24):
         if s == 14 and r == 3:
             continue
@@ -35,34 +36,35 @@ for s in subjects:
             continue
         elif s == 28 and r == 4:
             continue
-        f_path = os.path.join(bids_folder, 'sub-{:02}'.format(s),
-                'sub-{:02}_task-namereadingimagery_run-{:02}_events.tsv'.format(s, r))
-        #print(f_path)
-        assert os.path.exists(f_path)
-        with open(f_path) as i:
-            lines = [l.strip().split('\t') for l in i.readlines()]
-        header = lines[0]
-        if len(res_dict.keys()) == 0:
-            for k in header:
-                res_dict[k] = list()
-                res_dict['subject'] = list()
-                res_dict['required_answer'] = list()
-        data = lines[1:]
-        for l in data:
-            ### Adding expected answer
-            if l[2] not in ['_', '']:
-                quest = l[-1]
-                if quest in questions[l[2]]:
-                    ans = 'YES'
-                else:
-                    ans = 'NO'
+    '''
+    f_path = os.path.join(bids_folder, 'sub-{:02}'.format(s),
+            'sub-{:02}_task-namereadingimagery_events.tsv'.format(s))
+    #print(f_path)
+    assert os.path.exists(f_path)
+    with open(f_path) as i:
+        lines = [l.strip().split('\t') for l in i.readlines()]
+    header = lines[0]
+    if len(res_dict.keys()) == 0:
+        for k in header:
+            res_dict[k] = list()
+            res_dict['subject'] = list()
+            res_dict['required_answer'] = list()
+    data = lines[1:]
+    for l in data:
+        ### Adding expected answer
+        if l[2] not in ['_', '']:
+            quest = l[-1]
+            if quest in questions[l[2]]:
+                ans = 'YES'
             else:
                 ans = 'NO'
-            res_dict['required_answer'].append(ans)
-            ### Adding subject
-            res_dict['subject'].append(s)
-            for h, v in zip(header, l):
-                res_dict[h].append(v)
+        else:
+            ans = 'NO'
+        res_dict['required_answer'].append(ans)
+        ### Adding subject
+        res_dict['subject'].append(s)
+        for h, v in zip(header, l):
+            res_dict[h].append(v)
 
 mapper = {1 : 'low', 2 : 'medium', 3 : 'high'}
 

@@ -20,7 +20,7 @@ def finalize_rsa_searchlight(results, relevant_times, explicit_times, output_fol
 
     ### Writing to file
 
-    with open(os.path.join(output_folder, '{}_sub-{:02}.rsa'.format(awareness, n+1)), 'w') as o:
+    with open(os.path.join(output_folder, '{}_sub-{:02}.rsa'.format(awareness, n)), 'w') as o:
         for t in explicit_times:
             o.write('{}\t'.format(t))
         o.write('\n')

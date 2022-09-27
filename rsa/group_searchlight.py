@@ -28,7 +28,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
     else:
         input_folder = input_folder.replace('group_rsa', 'rsa')
         marker = '{}_rsa'.format(args.computational_model)
-    input_folder = os.path.join(input_folder, args.computational_model)
+    #input_folder = os.path.join(input_folder, args.computational_model)
 
     missing_per_condition = dict()
     present_per_condition = dict()
@@ -62,6 +62,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
                 electrodes = numpy.array([[float(v) for v in l] for l in lines[1:]]).T
                 all_subjects.append(electrodes)
             else:
+                print(file_path)
                 if awareness not in missing_per_condition.keys():
                     missing_per_condition[awareness] = [n]
                 else:
@@ -98,7 +99,7 @@ def run_group_searchlight(args, exp, clusters, input_folder):
 
         log_p = -numpy.log(p_values)
         #log_p[log_p<=-numpy.log(0.05)] = 0.0
-        log_p[log_p<=-numpy.log(0.005)] = 0.0
+        log_p[log_p<=-numpy.log(0.05)] = 0.0
 
         log_p = log_p.reshape(original_shape).T
 
@@ -124,13 +125,13 @@ def run_group_searchlight(args, exp, clusters, input_folder):
             evoked.plot_topomap(ch_type='eeg', \
                                 time_unit='s', \
                                 times=significant_times, \
-                                units='-log(p)\nif\np<=.005', \
+                                units='-log(p)\nif\np<=.05', \
                                 ncols=7, nrows='auto', \
                                 vmin=0., \
                                 scalings={'eeg':1.}, \
                                 cmap=cmap, title=title)
 
-            sig_plot_path = os.path.join(plot_path, 'significant_points_005')
+            sig_plot_path = os.path.join(plot_path, 'significant_points_05')
             os.makedirs(sig_plot_path, exist_ok=True)
             pyplot.savefig(os.path.join(sig_plot_path, \
                             '{}_{}_significant_points.jpg'.\

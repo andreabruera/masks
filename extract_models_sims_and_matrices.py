@@ -1,4 +1,4 @@
-import argparse
+import fasttext
 import gensim
 import itertools
 import logging
@@ -10,39 +10,256 @@ import re
 import scipy
 import sys
 
+from fasttext import util
 from matplotlib import image
 from nltk.corpus import wordnet
+from scipy import stats, spatial
 from skimage import metrics
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer, BertTokenizer, BertModel
 
-from extraction_utils import levenshtein, read_words
+#from extraction_utils import levenshtein, read_words
 
 sys.path.append('/import/cogsci/andrea/github/')
 
 from grano.plot_utils import confusion_matrix_simple
 
-parser = argparse.ArgumentParser()
 
-parser.add_argument('--experiment_id', required=True, \
-                    choices=['one', 'two'], \
-                    help='Which experiment?')
-args = parser.parse_args()
+def read_words():
+    ### Reading the list of it_words
+
+    file_name = 'chosen_words.txt'
+    separator = '\t'
+    cat_index = 2
+    en_index = 1
+
+    with open(file_name) as i:
+        lines = [l.strip().split(separator) \
+                   for l in i.readlines()][1:]
+
+    it_words = [l[0] for l in lines]
+    en_words = [l[en_index] for l in lines]
+
+    return it_words, en_words
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 
-plot_path = os.path.join('..', 'confusion_matrices', args.experiment_id)
+plot_path = os.path.join('confusion_matrices')
 os.makedirs(plot_path, exist_ok=True)
 
-it_words, en_words = read_words(args)
+it_words, en_words = read_words()
 
 assert len(it_words) in [32, 40]
 #word_combs = [k for k in itertools.combinations(it_words, r=2)]
 
-output_folder = os.path.join('..', 'similarities', args.experiment_id)
+output_folder = os.path.join('computational_models', 'similarities')
 os.makedirs(output_folder, exist_ok=True)
 
-wiki_folder = os.path.join('..', '..', 'resources', 'it_wiki_pages')
+wiki_folder = os.path.join('..', 'SISSA-EEG', 'resources', 'it_wiki_pages')
+
+logging.info('Extracting lengths')
+
+length_sims = list()
+
+with open(os.path.join(output_folder, 'length.sims'), 'w') as o:
+    for word_one in it_words:
+        word_one_list = list()
+        for word_two in it_words:
+            if word_one != word_two:
+                current_sim = abs(len(word_one)-len(word_two))
+                current_corr = current_sim
+            else:
+                current_sim = 0.
+                current_corr = 0.
+            word_one_list.append(current_sim)
+            o.write('{}\t{}\t{}\t{}\n'.format(word_one, word_two, current_sim, current_corr))
+        length_sims.append(word_one_list)
+
+### Plotting the matrix
+
+title = 'Confusion matrix for length distance'
+
+file_path = os.path.join(plot_path, 'length_confusion_exp_{}.jpg')
+confusion_matrix_simple(numpy.array(length_sims), it_words, title, file_path, text=False, \
+                        vmin=numpy.amin(length_sims), vmax=numpy.amax(length_sims))
+
+logging.info ('Extracting GPT-2')
+### Looking at BERT similarities
+
+#model_name = "dbmdz/bert-base-italian-xxl-cased"
+#tokenizer = AutoTokenizer.from_pretrained(model_name)
+#model = AutoModel.from_pretrained(model_name)
+model_name = 'GroNLP/gpt2-medium-italian-embeddings'
+model = AutoModel.from_pretrained(model_name).to('cuda:1')
+tokenizer = AutoTokenizer.from_pretrained(model_name, sep_token='[SEP]')
+
+required_shape = (model.config.hidden_size, )
+max_tokens = model.config.max_position_embeddings
+n_layers = model.config.n_layer
+
+gpt2_vectors = dict()
+
+counter = dict()
+
+for w in tqdm(it_words):
+
+    w_vectors = list()
+    wiki_file = os.path.join(wiki_folder, '{}.wiki'.format(w))
+    with open(wiki_file, encoding='utf-8') as i:
+        final_lines = [l.strip() for l in i.readlines()]
+    
+    '''
+    ### Individual mentions
+    #final_lines = final_lines[:-4]
+    ls = list()
+
+    for l in final_lines:
+
+        marker = False
+        finder = re.findall('(?<!\w){}\w(?!=\w)'.format(w[:-1]), l.lower())
+        if len(finder) >= 1:
+            marker = True
+        if marker:
+            new_l = re.sub('(?<!\w)({}\w)(?!=\w)'.format(w[:-1]), r'[SEP] \1 [SEP]',  l.lower())
+            ls.append(new_l)
+    assert len(ls) >= 1
+
+    for l in ls:
+        inputs = tokenizer(l, return_tensors="pt")
+        spans = [i_i for i_i, i in enumerate(inputs['input_ids'].numpy().reshape(-1)) if 
+                i==tokenizer.convert_tokens_to_ids(['[SEP]'])[0]]
+        if len(spans) > 1:
+            try:
+                assert len(spans) % 2 == 0
+            except AssertionError:
+                print(l)
+                continue
+            l = re.sub(r'\[SEP\]', '', l)
+            ### Correcting spans
+            correction = list(range(1, len(spans)+1))
+            spans = [max(0, s-c) for s,c in zip(spans, correction)]
+            split_spans = list()
+            for i in list(range(len(spans)))[::2]:
+                current_span = (spans[i], spans[i+1])
+                split_spans.append(current_span)
+
+            if len(tokenizer.tokenize(l)) > max_tokens:
+                continue
+            #outputs = model(**inputs, output_attentions=False, \
+            #                output_hidden_states=True, return_dict=True)
+            try:
+                inputs = tokenizer(l, return_tensors="pt").to('cuda:1')
+            except RuntimeError:
+                continue
+            try:
+                outputs = model(**inputs, output_attentions=False, \
+                                output_hidden_states=True, return_dict=True)
+            except RuntimeError:
+                print(l)
+                continue
+
+            hidden_states = numpy.array([s[0].cpu().detach().numpy() for s in outputs['hidden_states']])
+            #last_hidden_states = numpy.array([k.detach().numpy() for k in outputs['hidden_states']])[2:6, 0, :]
+            for beg, end in split_spans:
+                print(tokenizer.tokenize(l)[beg+1:end])
+                if len(tokenizer.tokenize(l)[beg+1:end]) == 0:
+                    print(l)
+                    continue
+                mention = hidden_states[:, beg:end, :]
+                mention = numpy.average(mention, axis=1)
+                layer_start = -4
+                ### outputs has at dimension 0 the final output
+                layer_end = n_layers+1
+                mention = mention[layer_start:layer_end, :]
+
+                mention = numpy.average(mention, axis=0)
+                assert mention.shape == required_shape
+                w_vectors.append(mention)
+        
+        '''
+
+    for l in final_lines:
+        ### Encoding the sentence
+        encoded_input = tokenizer(l, return_tensors='pt').to('cuda:1')
+        
+        ### Getting the model output
+        outputs = model(**encoded_input, output_hidden_states=True, \
+                       output_attentions=False, return_dict=True)
+    
+        ### Averaging all layers and all sentences
+        hidden_states = numpy.array([s[0].cpu().detach().numpy() for s in outputs['hidden_states']])
+        #last_hidden_states = numpy.array([k.detach().numpy() for k in outputs['hidden_states']])[2:6, 0, :]
+        mention = numpy.average(hidden_states, axis=1)
+        layer_start = -4
+        layer_end = mention.shape[0]
+        mention = mention[layer_start:layer_end, :]
+
+        mention = numpy.average(mention, axis=0)
+        assert mention.shape == required_shape
+        w_vectors.append(mention)
+
+    ### Averaging across mentions
+    assert len(w_vectors) >= 1
+    gpt2_vectors[w] = numpy.average(w_vectors, axis=0)
+
+### Loooking at GPT-2 similarities
+
+gpt2s = list()
+
+with open(os.path.join(output_folder, 'gpt2.sims'), 'w') as o:
+    for word_one in it_words:
+        vec_one = gpt2_vectors[word_one]
+        word_one_list = list()
+        for word_two in it_words:
+            vec_two = gpt2_vectors[word_two]
+            current_sim = 1. - scipy.spatial.distance.cosine(vec_one, vec_two)
+            current_corr = scipy.stats.pearsonr(vec_one, vec_two)[0]
+            word_one_list.append(current_corr)
+            o.write('{}\t{}\t{}\t{}\n'.format(word_one, word_two, current_sim, current_corr))
+        gpt2s.append(word_one_list)
+
+### Plotting the matrix
+
+title = 'Confusion matrix for GPT-2'
+
+file_path = os.path.join(plot_path, 'gpt2_confusion_exp.jpg')
+confusion_matrix_simple(numpy.array(gpt2s), it_words, title, file_path, text=False, \
+                        vmin=numpy.amin(gpt2s), vmax=numpy.amax(gpt2s))
+
+import pdb; pdb.set_trace()
+
+logging.info ('Extracting Fasttext')
+
+### Loooking at Fasttext similarities
+fasttext.util.download_model('it')
+ft = fasttext.load_model('cc.it.300.bin')
+ft_sims = list()
+
+with open(os.path.join(output_folder, 'fasttext.sims'), 'w') as o:
+    #for word_one, word_two in word_combs:
+    for word_one in it_words:
+        vec_one = ft.get_word_vector(word_one)
+        word_one_list = list()
+        for word_two in it_words:
+            if word_one != word_two:
+                vec_two = ft.get_word_vector(word_two)
+                current_sim = 1. - scipy.spatial.distance.cosine(vec_one, vec_two)
+                current_corr = scipy.stats.pearsonr(vec_one, vec_two)[0]
+            else:
+                current_sim = 1.
+                current_corr = 1.
+            word_one_list.append(current_sim)
+            o.write('{}\t{}\t{}\t{}\n'.format(word_one, word_two, current_sim, current_corr))
+        ft_sims.append(word_one_list)
+
+### Plotting the matrix
+
+title = 'Confusion matrix for Fasttext'
+
+file_path = os.path.join(plot_path, 'fasttext_confusion_exp.jpg')
+confusion_matrix_simple(numpy.array(ft_sims), it_words, title, file_path, text=False, \
+                        vmin=numpy.amin(ft_sims), vmax=numpy.amax(ft_sims))
+
 
 logging.info ('Extracting orthography')
 
@@ -68,7 +285,7 @@ with open(os.path.join(output_folder, 'orthography.sims'), 'w') as o:
 
 title = 'Confusion matrix for orthography distance'
 
-file_path = os.path.join(plot_path, 'orthography_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'orthography_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(orthography_sims), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(orthography_sims), vmax=numpy.amax(orthography_sims))
 
@@ -111,7 +328,7 @@ for layer in layers:
 
     title = 'Confusion matrix for CORnet {}'.format(layer)
 
-    file_path = os.path.join(plot_path, 'CORnet_{}_confusion_exp_{}.png'.format(layer, args.experiment_id))
+    file_path = os.path.join(plot_path, 'CORnet_{}_confusion_exp_{}.jpg'.format(layer, args.experiment_id))
     confusion_matrix_simple(numpy.array(V1_sims), it_words, title, file_path, text=False, \
                             vmin=numpy.amin(V1_sims), vmax=numpy.amax(V1_sims))
 
@@ -122,7 +339,7 @@ logging.info('Extracting images')
 images_path = os.path.join('..', '..', 'resources', 'stimuli_images') 
 word_dict = dict()
 for w in it_words:
-    im = image.imread(os.path.join(images_path, '{}.png'.format(w)))
+    im = image.imread(os.path.join(images_path, '{}.jpg'.format(w)))
     word_dict[w] = im
 
 print('Now computing pairwise similarities...')
@@ -182,7 +399,7 @@ with open('../rsa_analyses/computational_models/visual/visual.sims', 'w') as o:
 
 title = 'Confusion matrix for pixelwise'
 
-file_path = os.path.join(plot_path, 'pixelwise_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'pixelwise_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(pixelwise_sims), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(pixelwise_sims), vmax=numpy.amax(pixelwise_sims))
 
@@ -219,7 +436,7 @@ with open(os.path.join(output_folder, 'w2v.sims'), 'w') as o:
 
 title = 'Confusion matrix for Word2Vec'
 
-file_path = os.path.join(plot_path, 'w2v_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'w2v_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(w2v_sims), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(w2v_sims), vmax=numpy.amax(w2v_sims))
 
@@ -270,7 +487,7 @@ with open(os.path.join(output_folder, 'cooc.sims'), 'w') as o:
 
 title = 'Confusion matrix for ItWac co-occurrences'
 
-file_path = os.path.join(plot_path, 'cooc_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'cooc_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(coocs), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(coocs), vmax=numpy.amax(coocs))
 
@@ -284,7 +501,7 @@ with open(os.path.join(output_folder, 'log_cooc.sims'), 'w') as o:
 
 title = 'Confusion matrix for log co-occurrence'
 
-file_path = os.path.join(plot_path, 'log_cooc_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'log_cooc_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(log_coocs, it_words, title, file_path, text=False, \
                         vmin=numpy.amin(log_coocs), vmax=numpy.amax(log_coocs))
 
@@ -299,7 +516,7 @@ with open(os.path.join(output_folder, 'ppmi.sims'), 'w') as o:
 
 title = 'Confusion matrix for PPMI'
 
-file_path = os.path.join(plot_path, 'ppmi_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'ppmi_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(ppmis), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(ppmis), vmax=numpy.amax(ppmis))
 
@@ -401,7 +618,7 @@ with open(os.path.join(output_folder, 'bert.sims'), 'w') as o:
 
 title = 'Confusion matrix for BERT'
 
-file_path = os.path.join(plot_path, 'bert_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'bert_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(numpy.array(berts), it_words, title, file_path, text=False, \
                         vmin=numpy.amin(berts), vmax=numpy.amax(berts))
 
@@ -431,7 +648,7 @@ with open(os.path.join(output_folder, 'wordnet.sims'), 'w') as o:
             if w_one_i != w_two_i:
                 sim = wordnet.path_similarity(w_syns_one, w_syns_two)
             else:
-                sim = 0.
+                sim = 1.
             w_sims.append(sim)
             o.write('{}\t{}\t{}\n'.format(it_words[w_one_i], it_words[w_two_i], sim))
         wordnets.append(w_sims)
@@ -442,7 +659,7 @@ wordnets = numpy.array(wordnets)
 
 title = 'Confusion matrix for WordNet'
 
-file_path = os.path.join(plot_path, 'wordnet_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'wordnet_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(wordnets, it_words, title, file_path, text=False, \
                         vmin=numpy.amin(wordnets), vmax=numpy.amax(wordnets))
 
@@ -471,5 +688,5 @@ for m_one in flattened:
 models_corr = numpy.array(models_corr)
 title = 'Confusion matrix comparing the models'
 
-file_path = os.path.join(plot_path, 'all_models_confusion_exp_{}.png'.format(args.experiment_id))
+file_path = os.path.join(plot_path, 'all_models_confusion_exp_{}.jpg'.format(args.experiment_id))
 confusion_matrix_simple(models_corr, names, title, file_path, text=True)
