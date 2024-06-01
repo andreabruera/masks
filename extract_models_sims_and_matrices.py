@@ -84,123 +84,18 @@ confusion_matrix_simple(numpy.array(length_sims), it_words, title, file_path, te
                         vmin=numpy.amin(length_sims), vmax=numpy.amax(length_sims))
 
 logging.info ('Extracting GPT-2')
-### Looking at BERT similarities
-
-#model_name = "dbmdz/bert-base-italian-xxl-cased"
-#tokenizer = AutoTokenizer.from_pretrained(model_name)
-#model = AutoModel.from_pretrained(model_name)
-model_name = 'GroNLP/gpt2-medium-italian-embeddings'
-model = AutoModel.from_pretrained(model_name).to('cuda:1')
-tokenizer = AutoTokenizer.from_pretrained(model_name, sep_token='[SEP]')
-
-required_shape = (model.config.hidden_size, )
-max_tokens = model.config.max_position_embeddings
-n_layers = model.config.n_layer
-
+folder = os.path.join('word_vectors_11_2022', 'ITGPT2medium', 
+                      'top_four', 'single_words')
+gpt2_files = list(os.listdir(folder))
 gpt2_vectors = dict()
-
-counter = dict()
-
-for w in tqdm(it_words):
-
-    w_vectors = list()
-    wiki_file = os.path.join(wiki_folder, '{}.wiki'.format(w))
-    with open(wiki_file, encoding='utf-8') as i:
-        final_lines = [l.strip() for l in i.readlines()]
-    
-    '''
-    ### Individual mentions
-    #final_lines = final_lines[:-4]
-    ls = list()
-
-    for l in final_lines:
-
-        marker = False
-        finder = re.findall('(?<!\w){}\w(?!=\w)'.format(w[:-1]), l.lower())
-        if len(finder) >= 1:
-            marker = True
-        if marker:
-            new_l = re.sub('(?<!\w)({}\w)(?!=\w)'.format(w[:-1]), r'[SEP] \1 [SEP]',  l.lower())
-            ls.append(new_l)
-    assert len(ls) >= 1
-
-    for l in ls:
-        inputs = tokenizer(l, return_tensors="pt")
-        spans = [i_i for i_i, i in enumerate(inputs['input_ids'].numpy().reshape(-1)) if 
-                i==tokenizer.convert_tokens_to_ids(['[SEP]'])[0]]
-        if len(spans) > 1:
-            try:
-                assert len(spans) % 2 == 0
-            except AssertionError:
-                print(l)
-                continue
-            l = re.sub(r'\[SEP\]', '', l)
-            ### Correcting spans
-            correction = list(range(1, len(spans)+1))
-            spans = [max(0, s-c) for s,c in zip(spans, correction)]
-            split_spans = list()
-            for i in list(range(len(spans)))[::2]:
-                current_span = (spans[i], spans[i+1])
-                split_spans.append(current_span)
-
-            if len(tokenizer.tokenize(l)) > max_tokens:
-                continue
-            #outputs = model(**inputs, output_attentions=False, \
-            #                output_hidden_states=True, return_dict=True)
-            try:
-                inputs = tokenizer(l, return_tensors="pt").to('cuda:1')
-            except RuntimeError:
-                continue
-            try:
-                outputs = model(**inputs, output_attentions=False, \
-                                output_hidden_states=True, return_dict=True)
-            except RuntimeError:
-                print(l)
-                continue
-
-            hidden_states = numpy.array([s[0].cpu().detach().numpy() for s in outputs['hidden_states']])
-            #last_hidden_states = numpy.array([k.detach().numpy() for k in outputs['hidden_states']])[2:6, 0, :]
-            for beg, end in split_spans:
-                print(tokenizer.tokenize(l)[beg+1:end])
-                if len(tokenizer.tokenize(l)[beg+1:end]) == 0:
-                    print(l)
-                    continue
-                mention = hidden_states[:, beg:end, :]
-                mention = numpy.average(mention, axis=1)
-                layer_start = -4
-                ### outputs has at dimension 0 the final output
-                layer_end = n_layers+1
-                mention = mention[layer_start:layer_end, :]
-
-                mention = numpy.average(mention, axis=0)
-                assert mention.shape == required_shape
-                w_vectors.append(mention)
-        
-        '''
-
-    for l in final_lines:
-        ### Encoding the sentence
-        encoded_input = tokenizer(l, return_tensors='pt').to('cuda:1')
-        
-        ### Getting the model output
-        outputs = model(**encoded_input, output_hidden_states=True, \
-                       output_attentions=False, return_dict=True)
-    
-        ### Averaging all layers and all sentences
-        hidden_states = numpy.array([s[0].cpu().detach().numpy() for s in outputs['hidden_states']])
-        #last_hidden_states = numpy.array([k.detach().numpy() for k in outputs['hidden_states']])[2:6, 0, :]
-        mention = numpy.average(hidden_states, axis=1)
-        layer_start = -4
-        layer_end = mention.shape[0]
-        mention = mention[layer_start:layer_end, :]
-
-        mention = numpy.average(mention, axis=0)
-        assert mention.shape == required_shape
-        w_vectors.append(mention)
-
-    ### Averaging across mentions
-    assert len(w_vectors) >= 1
-    gpt2_vectors[w] = numpy.average(w_vectors, axis=0)
+assert len(gpt2_files) == 32
+for f in gpt2_files:
+    file_path = os.path.join(folder, f)
+    w = f.split('.')[0]
+    with open(file_path) as i:
+        vec = numpy.array([l.strip().split('\t') for l in i.readlines()][0], dtype=numpy.float64)
+        assert vec.shape == (1024, )
+    gpt2_vectors[w] = vec
 
 ### Loooking at GPT-2 similarities
 

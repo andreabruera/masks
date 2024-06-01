@@ -9,7 +9,7 @@ import scipy
 from tqdm import tqdm
 
 from io_utils import ComputationalModel, ExperimentInfo, EEGData
-from classification.time_resolved_classification import run_classification, run_searchlight_classification, run_time_resolved_rsa, run_grand_average
+from classification.time_resolved_classification import run_classification, run_searchlight_classification, run_time_resolved_rsa, run_grand_average, run_time_resolved_decoding
 from plot_scripts.plot_classification import plot_classification, plot_classification_subject_per_subject
 from plot_scripts.plot_grand_average import plot_grand_average
 from rsa.group_searchlight import run_group_searchlight
@@ -29,6 +29,7 @@ parser.add_argument('--analysis', required=True, \
                              'rsa_searchlight', \
                              'classification_searchlight',
                              'time_resolved_rsa',
+                             'time_resolved_decoding',
                              'grand_average',
                              ], \
                     help='Indicates which analysis to perform')
@@ -65,11 +66,35 @@ parser.add_argument('--subject_per_subject', action='store_true', \
 parser.add_argument('--data_kind', choices=['erp'], \
                     default='erp', help='ERP analyses?')
 
+### Various parameters to check for the effects of averaging etc
+parser.add_argument('--lower_threshold', choices=[str(n) for n in range(1, 10+1)],
+                    required=False, default='4', 
+                    help='What should be the threshold of repetitions required for a word to be kept?')
+parser.add_argument('--higher_threshold', choices=[str(n) for n in range(1, 24+1)],
+                    required=False, default='8', help='What should be the highest number of trials used?')
+parser.add_argument('--n_iterations', choices=[str(n) for n in range(10, 51, 10)]+['1'],
+                    required=False, default='1', 
+                    help='how many times the estimation of the correlations should be repeated?')
+parser.add_argument('--balance_semantic_domains', action='store_true')
+parser.add_argument('--minimum_number_words', choices=[str(n) for n in range(4, 32+1)],
+                    required=False, default='8', 
+                    help='What should be the threshold of words required for a subject to be kept?')
+
 args = parser.parse_args()
 
+if args.lower_threshold > args.higher_threshold:
+    raise RuntimeError('The number of max items used cannot be lower than the minimum!')
+
 general_output_folder = os.path.join('results', args.analysis, args.data_split)
-if 'rsa' in args.analysis:
+if 'rsa' in args.analysis or args.analysis == 'time_resolved_decoding':
     general_output_folder = os.path.join(general_output_folder, args.computational_model)
+    if 'time' in args.analysis:
+        general_output_folder = os.path.join(general_output_folder, 
+                                             'min_{}'.format(args.lower_threshold),
+                                             'max_{}'.format(args.higher_threshold), 
+                                             '{}_iterations'.format(args.n_iterations),
+                                             'balance_{}'.format(args.balance_semantic_domains),
+                                             'min_words_{}'.format(args.minimum_number_words))
 if not args.plot:
     if os.path.exists(general_output_folder):
         os.system('rm -r {}'.format(general_output_folder))
@@ -104,8 +129,28 @@ elif args.analysis == 'time_resolved_rsa':
                 accuracies.append(run_time_resolved_rsa([experiment, n, args, general_output_folder]))
         ### All subjects together
         else:
-            with multiprocessing.Pool() as p:
+            with multiprocessing.Pool(processes=int(os.cpu_count()/3)) as p:
                 accuracies = p.map(run_time_resolved_rsa, [[experiment, n, args, general_output_folder] for n in range(1, experiment.n_subjects+1)])
+            p.terminate()
+            p.join()
+elif args.analysis == 'time_resolved_decoding':
+    ### Just plotting
+    if args.plot:
+        if args.subject_per_subject:
+            plot_classification_subject_per_subject(args)
+        else:
+            plot_classification(args)
+    ### Computing the classification scores
+    else:
+        accuracies = list()
+        ### One subject at a time
+        if args.debugging:
+            for n in tqdm(range(1, experiment.n_subjects+1)):
+                accuracies.append(run_time_resolved_decoding([experiment, n, args, general_output_folder]))
+        ### All subjects together
+        else:
+            with multiprocessing.Pool(processes=int(os.cpu_count()/3)) as p:
+                accuracies = p.map(run_time_resolved_decoding, [[experiment, n, args, general_output_folder] for n in range(1, experiment.n_subjects+1)])
             p.terminate()
             p.join()
 

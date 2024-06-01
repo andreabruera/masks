@@ -12,7 +12,8 @@ def check_statistical_significance(args, setup_data, significance):
     if not type(setup_data) == numpy.array:
         setup_data = numpy.array(setup_data)
     ### Checking for statistical significance
-    if args.analysis == 'time_resolved_rsa':
+    #if args.analysis == 'time_resolved_rsa':
+    if 'time_resolved' in args.analysis:
         random_baseline = 0.
     else:
         random_baseline = .5
@@ -89,7 +90,7 @@ def read_files(args):
 
     subjects = list(range(1, 46))
     bads = [8, 22, 25, 28, 37]
-    subjects = [s for s in subjects if s not in bads]
+    #subjects = [s for s in subjects if s not in bads]
 
     data_dict = possibilities(args)
 
@@ -99,8 +100,15 @@ def read_files(args):
                             args.analysis, \
                             args.data_split,
                             )
-        if args.analysis == 'time_resolved_rsa':
+        #if args.analysis == 'time_resolved_rsa':
+        if 'time_resolved' in args.analysis:
             path = os.path.join(path, args.computational_model)
+            path = os.path.join(path, 
+                                 'min_{}'.format(args.lower_threshold),
+                                 'max_{}'.format(args.higher_threshold), 
+                                 '{}_iterations'.format(args.n_iterations),
+                                 'balance_{}'.format(args.balance_semantic_domains),
+                                 'min_words_{}'.format(args.minimum_number_words))
         assert os.path.exists(path)
 
         file_lambda = lambda arg_list : os.path.join(arg_list[0], \
@@ -133,11 +141,19 @@ def read_files(args):
 
 def plot_classification(args):
 
-    colors = {'low' : (86., 180., 233.),
+    colors = {
+              'low' : (86., 180., 233.),
               'medium' : (240., 228., 66.),
               'high' : (230., 159., 0.),
-              'wrong' : (0., 114., 178.),
-              'correct' : (213., 94., 0.),
+              'correct' : (0., 114., 178.),
+              'wrong' : (0., 0. , 0.),
+              '2_correct' : (86., 180., 233.),
+              '1_wrong' : (0., 0., 0.),
+              '2_wrong' : (230., 159., 0.),
+              '3_wrong' : (0., 114., 178.),
+              '3_correct' : (213., 94., 0.),
+              '1_correct' : (0., 158., 115.),
+
               }
 
     colors = {k : numpy.array(v)/255 for k, v in colors.items()}
@@ -150,6 +166,11 @@ def plot_classification(args):
                              args.analysis,
                              args.data_split
                              )
+    if 'time' in args.analysis:
+        plot_path = os.path.join(plot_path, 
+                                 '{}_iterations'.format(args.n_iterations),
+                                 'balance_{}'.format(args.balance_semantic_domains),
+                                 'min_words_{}'.format(args.minimum_number_words))
     os.makedirs(plot_path, exist_ok=True)
 
     ### Preparing a double plot
@@ -171,7 +192,7 @@ def plot_classification(args):
             'data split according to: '\
             '{}\n'.format(args.data_split)
     title = title.replace('_', ' ')
-    if args.analysis == 'time_resolved_rsa':
+    if 'time_resolved' in args.analysis:
         title = '{} - model: {}'.format(title, args.computational_model)
         title = title.replace('Classification', 'Time-resolved RSA')
     ax[0].set_title(title, pad=20)
@@ -179,7 +200,8 @@ def plot_classification(args):
     ax[0].spines['right'].set_visible(False)
     ax[0].set_ylabel('Pearson correlation (EEG x model)', labelpad=10)
 
-    if args.analysis == 'time_resolved_rsa':
+    #if args.analysis == 'time_resolved_rsa':
+    if 'time_resolved' in args.analysis:
         random_baseline = 0.
     else:
         random_baseline = .5
@@ -269,8 +291,9 @@ def plot_classification(args):
                     args.data_split,
                     )
                    )
-    if args.analysis == 'time_resolved_rsa':
-        out_file = out_file.replace('.jpg', '_{}.jpg'.format(args.computational_model))
+    #if args.analysis == 'time_resolved_rsa':
+    if 'time_resolved' in args.analysis:
+        out_file = out_file.replace('.jpg', '_{}_min_{}_max_{}.jpg'.format(args.computational_model, args.lower_threshold, args.higher_threshold))
     pyplot.savefig(out_file)
     pyplot.clf()
     pyplot.close(fig)
@@ -303,14 +326,16 @@ def plot_classification_subject_per_subject(args):
                 'data split according to: {}'.format(\
                         args.data_split)
         title = title.replace('_', ' ')
-        if args.analysis == 'time_resolved_rsa':
+        #if args.analysis == 'time_resolved_rsa':
+        if 'time_resolved' in args.analysis:
             title = '{}\nmodel: {}'.format(title, args.computational_model)
             title = title.replace('Classification', 'Time-resolved RSA')
         ax[0].set_title(title, pad=20)
         ax[0].spines['top'].set_visible(False)
         ax[0].spines['right'].set_visible(False)
 
-        if args.analysis == 'time_resolved_rsa':
+        #if args.analysis == 'time_resolved_rsa':
+        if 'time_resolved' in args.analysis:
             random_baseline = 0.
         else:
             random_baseline = .5
@@ -355,7 +380,8 @@ def plot_classification_subject_per_subject(args):
             out_file = os.path.join(plot_path,
                            'classification_subject_{}_{}_{}.jpg'.format(subject, args.analysis, \
                             args.data_split))
-            if args.analysis == 'time_resolved_rsa':
+            #if args.analysis == 'time_resolved_rsa':
+            if 'time_resolved' in args.analysis:
                 out_file = out_file.replace('.jpg', '{}.jpg'.format(args.computational_model))
             pyplot.savefig(out_file)
             pyplot.clf()

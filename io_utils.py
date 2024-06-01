@@ -82,7 +82,11 @@ class EEGData:
         epochs = mne.read_epochs(eeg_path, verbose=False)
         epochs.pick_types(eeg=True)
 
+        epochs_data = mne.decoding.Scaler(info=epochs.info).fit_transform(epochs.get_data())
+
         times = epochs.times
+
+
 
         ### Extracting the covariance matrix
         #covariance_matrix = mne.compute_covariance(epochs)
@@ -100,7 +104,7 @@ class EEGData:
             for pas_label in ['1', '2', '3']:
                 for acc_label in ['correct', 'wrong']:
                     label = '{}_{}'.format(pas_label, acc_label)
-                    for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+                    for epoch, pas, acc, trigger in zip(epochs_data, current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
                         if pas_label == pas and acc_label == acc:
                             if label not in data_dict.keys():
                                 data_dict[label] = dict()
@@ -109,7 +113,7 @@ class EEGData:
                             data_dict[label][trigger].append(epoch)
         elif args.data_split == 'grand_average':
             label = 'grand_average'
-            for epoch, trigger in zip(epochs.get_data(), epochs.events[:, 2]):
+            for epoch, trigger in zip(epochs_data, epochs.events[:, 2]):
                 if label not in data_dict.keys():
                     data_dict[label] = dict()
                 if trigger not in data_dict[label].keys():
@@ -118,7 +122,7 @@ class EEGData:
             
         elif args.data_split == 'best_case':
             label = 'best_case'
-            for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+            for epoch, pas, acc, trigger in zip(epochs_data, current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
                 if pas == '3' and acc == 'correct':
                     if label not in data_dict.keys():
                         data_dict[label] = dict()
@@ -127,7 +131,7 @@ class EEGData:
                     data_dict[label][trigger].append(epoch)
         elif args.data_split == 'worst_case':
             label = 'worst_case'
-            for epoch, pas, acc, trigger in zip(epochs.get_data(), current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
+            for epoch, pas, acc, trigger in zip(epochs_data, current_events['PAS_score'], current_events['accuracy'], epochs.events[:, 2]):
                 if pas == '1' and acc == 'wrong':
                     if label not in data_dict.keys():
                         data_dict[label] = dict()
@@ -142,7 +146,7 @@ class EEGData:
             elif args.data_split == 'perceptual_awareness':
                 relevant_key = 'PAS_score'
 
-            for epoch, label, trigger in zip(epochs.get_data(), current_events[relevant_key], epochs.events[:, 2]):
+            for epoch, label, trigger in zip(epochs_data, current_events[relevant_key], epochs.events[:, 2]):
                 if label not in data_dict.keys():
                     data_dict[label] = dict()
                 if trigger not in data_dict[label].keys():
@@ -154,14 +158,14 @@ class EEGData:
         for k, v in data_dict.items():
             for t, vecs in v.items():
                 ### Keeping only items with at least n repetitions
-                n_items = 8
+                n_items = int(args.lower_threshold)
 
                 if len(vecs) >= n_items:
                     ### Randomizing the actual vectors used
-                    #vecs = random.sample(vecs, k=n_items)
+                    sample_size = min(len(vecs), int(args.higher_threshold))
+                    vecs = random.sample(vecs, k=sample_size)
                     ### Taking the last n
-                    #vecs = vecs[-n_items:]
-                    #assert len(vecs) == n_items
+                    assert len(vecs) == sample_size
                     final_data_dict[k][t] = numpy.average(vecs, axis=0)
                     assert final_data_dict[k][t].shape == epoch.shape
 
